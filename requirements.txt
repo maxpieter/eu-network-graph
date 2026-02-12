@@ -1,2 +1,1 @@
 # Python dependencies for Vercel serverless functions
-# Add any additional packages you need here
