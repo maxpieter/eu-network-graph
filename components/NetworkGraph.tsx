@@ -216,8 +216,8 @@ export default function NetworkGraph({
     node.on('mouseover', function(event, d) {
       const connectedNodeIds = new Set<string>()
       links.forEach(l => {
-        const sourceId = typeof l.source === 'object' ? (l.source as SimNode).id : l.source
-        const targetId = typeof l.target === 'object' ? (l.target as SimNode).id : l.target
+        const sourceId = typeof l.source === 'object' ? (l.source as SimNode).id : String(l.source)
+        const targetId = typeof l.target === 'object' ? (l.target as SimNode).id : String(l.target)
         if (sourceId === d.id) connectedNodeIds.add(targetId)
         if (targetId === d.id) connectedNodeIds.add(sourceId)
       })
@@ -228,18 +228,18 @@ export default function NetworkGraph({
 
       link
         .attr('opacity', l => {
-          const sourceId = typeof l.source === 'object' ? (l.source as SimNode).id : l.source
-          const targetId = typeof l.target === 'object' ? (l.target as SimNode).id : l.target
+          const sourceId = typeof l.source === 'object' ? (l.source as SimNode).id : String(l.source)
+          const targetId = typeof l.target === 'object' ? (l.target as SimNode).id : String(l.target)
           return sourceId === d.id || targetId === d.id ? 1 : 0.05
         })
         .attr('stroke', l => {
-          const sourceId = typeof l.source === 'object' ? (l.source as SimNode).id : l.source
-          const targetId = typeof l.target === 'object' ? (l.target as SimNode).id : l.target
+          const sourceId = typeof l.source === 'object' ? (l.source as SimNode).id : String(l.source)
+          const targetId = typeof l.target === 'object' ? (l.target as SimNode).id : String(l.target)
           return sourceId === d.id || targetId === d.id ? (groupColors[d.group] || '#999') : '#cbd5e1'
         })
         .attr('stroke-width', l => {
-          const sourceId = typeof l.source === 'object' ? (l.source as SimNode).id : l.source
-          const targetId = typeof l.target === 'object' ? (l.target as SimNode).id : l.target
+          const sourceId = typeof l.source === 'object' ? (l.source as SimNode).id : String(l.source)
+          const targetId = typeof l.target === 'object' ? (l.target as SimNode).id : String(l.target)
           return sourceId === d.id || targetId === d.id ? Math.sqrt(l.value) * 2.5 : Math.sqrt(l.value) * 1.5
         })
 
