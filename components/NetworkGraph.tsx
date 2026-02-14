@@ -88,6 +88,55 @@ export default function NetworkGraph({
     // Clear existing content
     svg.selectAll('*').remove()
 
+    // Prepare data
+    const nodes: SimNode[] = graphData.nodes.map(d => ({ ...d }))
+    const links: SimLink[] = graphData.links.map(d => ({ ...d }))
+
+    // Pre-run simulation to calculate positions before rendering
+    const preSimulation = d3.forceSimulation<SimNode>(nodes)
+      .force('link', d3.forceLink<SimNode, SimLink>(links).id(d => d.id).distance(LINK_DISTANCE))
+      .force('charge', d3.forceManyBody<SimNode>().strength(chargeStrength))
+      .force('center', d3.forceCenter(width / 2, height / 2))
+      .force('collision', d3.forceCollide<SimNode>().radius(NODE_SIZE + 4))
+      .stop()
+
+    // Run simulation synchronously (300 ticks is usually enough)
+    for (let i = 0; i < 300; i++) {
+      preSimulation.tick()
+    }
+
+    // Calculate initial transform to fit all nodes
+    const padding = 50
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+    nodes.forEach(n => {
+      if (n.x !== undefined && n.y !== undefined) {
+        minX = Math.min(minX, n.x)
+        maxX = Math.max(maxX, n.x)
+        minY = Math.min(minY, n.y)
+        maxY = Math.max(maxY, n.y)
+      }
+    })
+
+    let initialTransform = d3.zoomIdentity
+    if (isFinite(minX) && nodes.length > 0) {
+      const boundsWidth = maxX - minX
+      const boundsHeight = maxY - minY
+      const centerX = (minX + maxX) / 2
+      const centerY = (minY + maxY) / 2
+      const scale = Math.min(
+        (width - padding * 2) / (boundsWidth || 1),
+        (height - padding * 2) / (boundsHeight || 1),
+        1.5
+      )
+      initialTransform = d3.zoomIdentity
+        .translate(width / 2, height / 2)
+        .scale(scale)
+        .translate(-centerX, -centerY)
+    }
+
+    // Main group
+    const g = svg.append('g')
+
     // Add zoom
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.1, 10])
@@ -98,51 +147,10 @@ export default function NetworkGraph({
     svg.call(zoom)
     zoomRef.current = zoom
 
-    // Fit to screen function
-    const fitToScreen = () => {
-      if (nodes.length === 0) return
+    // Apply initial fitted transform immediately (no animation)
+    svg.call(zoom.transform, initialTransform)
 
-      const padding = 50
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
-
-      nodes.forEach(n => {
-        if (n.x !== undefined && n.y !== undefined) {
-          minX = Math.min(minX, n.x)
-          maxX = Math.max(maxX, n.x)
-          minY = Math.min(minY, n.y)
-          maxY = Math.max(maxY, n.y)
-        }
-      })
-
-      if (!isFinite(minX)) return
-
-      const boundsWidth = maxX - minX
-      const boundsHeight = maxY - minY
-      const centerX = (minX + maxX) / 2
-      const centerY = (minY + maxY) / 2
-
-      const scale = Math.min(
-        (width - padding * 2) / (boundsWidth || 1),
-        (height - padding * 2) / (boundsHeight || 1),
-        1.5 // max zoom
-      )
-
-      const transform = d3.zoomIdentity
-        .translate(width / 2, height / 2)
-        .scale(scale)
-        .translate(-centerX, -centerY)
-
-      svg.transition().duration(500).call(zoom.transform, transform)
-    }
-
-    // Main group
-    const g = svg.append('g')
-
-    // Prepare data
-    const nodes: SimNode[] = graphData.nodes.map(d => ({ ...d }))
-    const links: SimLink[] = graphData.links.map(d => ({ ...d }))
-
-    // Links
+    // Links (positions already computed)
     const linkGroup = g.append('g').attr('class', 'links')
     const link = linkGroup
       .selectAll<SVGLineElement, SimLink>('line')
@@ -151,8 +159,12 @@ export default function NetworkGraph({
       .attr('stroke', '#cbd5e1')
       .attr('stroke-opacity', 0.6)
       .attr('stroke-width', d => Math.sqrt(d.weight) * 1.5)
+      .attr('x1', d => (d.source as SimNode).x!)
+      .attr('y1', d => (d.source as SimNode).y!)
+      .attr('x2', d => (d.target as SimNode).x!)
+      .attr('y2', d => (d.target as SimNode).y!)
 
-    // Nodes
+    // Nodes (positions already computed)
     const nodeGroup = g.append('g').attr('class', 'nodes')
     const node = nodeGroup
       .selectAll<SVGCircleElement, SimNode>('circle')
@@ -162,10 +174,12 @@ export default function NetworkGraph({
       .attr('fill', d => typeColors[d.type] || '#999')
       .attr('stroke', '#fff')
       .attr('stroke-width', 2)
+      .attr('cx', d => d.x!)
+      .attr('cy', d => d.y!)
       .style('cursor', 'grab')
       .style('filter', 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))')
 
-    // Labels (hidden by default)
+    // Labels (hidden by default, positions already computed)
     const labelGroup = g.append('g').attr('class', 'labels')
     const labels = labelGroup
       .selectAll<SVGTextElement, SimNode>('text')
@@ -176,11 +190,13 @@ export default function NetworkGraph({
       .attr('fill', '#374151')
       .attr('text-anchor', 'middle')
       .attr('dy', -NODE_SIZE - 6)
+      .attr('x', d => d.x!)
+      .attr('y', d => d.y!)
       .attr('opacity', 0)
       .attr('pointer-events', 'none')
       .text(d => d.label || d.id)
 
-    // Simulation
+    // Simulation (positions already pre-computed, start with low alpha)
     const simulation = d3.forceSimulation<SimNode>(nodes)
       .force('link', d3.forceLink<SimNode, SimLink>(links)
         .id(d => d.id)
@@ -188,10 +204,12 @@ export default function NetworkGraph({
       .force('charge', d3.forceManyBody<SimNode>().strength(chargeStrength))
       .force('center', d3.forceCenter(width / 2, height / 2))
       .force('collision', d3.forceCollide<SimNode>().radius(NODE_SIZE + 4))
+      .alpha(0.1)  // Start cool since positions are pre-computed
+      .alphaDecay(0.02)
 
     simulationRef.current = simulation
 
-    // Tick
+    // Tick - just update positions (no fit needed, already pre-computed)
     simulation.on('tick', () => {
       link
         .attr('x1', d => (d.source as SimNode).x!)
@@ -207,12 +225,6 @@ export default function NetworkGraph({
         .attr('x', d => d.x!)
         .attr('y', d => d.y!)
     })
-
-    // Fit to screen when simulation settles
-    simulation.on('end', fitToScreen)
-
-    // Also fit after a short delay for initial layout
-    setTimeout(fitToScreen, 300)
 
     // Drag behavior
     const drag = d3.drag<SVGCircleElement, SimNode>()
