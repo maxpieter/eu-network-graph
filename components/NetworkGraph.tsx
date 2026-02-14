@@ -2,21 +2,24 @@
 
 import { useEffect, useRef, useState } from 'react'
 import * as d3 from 'd3'
-import { groupColors, groupLabels, fetchGraphData, mockData, GraphData } from '@/lib/data'
+import { typeColors, typeLabels, fetchGraphData, GraphData, GraphFilters } from '@/lib/data'
 
 interface SimNode extends d3.SimulationNodeDatum {
   id: string
-  group: number
-  label?: string
+  type: string
+  label: string
+  party?: string
+  country?: string
 }
 
 interface SimLink extends d3.SimulationLinkDatum<SimNode> {
-  value: number
+  weight: number
+  timestamps?: string[]
 }
 
 interface NetworkGraphProps {
   chargeStrength: number
-  selectedGroup: number | null
+  filters: GraphFilters
 }
 
 // Fixed values
@@ -25,17 +28,18 @@ const NODE_SIZE = 8
 
 export default function NetworkGraph({
   chargeStrength,
-  selectedGroup,
+  filters,
 }: NetworkGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const simulationRef = useRef<d3.Simulation<SimNode, SimLink> | null>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
+  const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null)
 
-  const [graphData, setGraphData] = useState<GraphData>(mockData)
+  const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Fetch data from API
+  // Fetch data from API when filters change
   useEffect(() => {
     let cancelled = false
 
@@ -44,21 +48,19 @@ export default function NetworkGraph({
       setError(null)
 
       try {
-        const data = await fetchGraphData(selectedGroup)
+        const data = await fetchGraphData(filters)
 
         if (!cancelled) {
+          setGraphData(data)
           if (data.nodes.length === 0) {
-            // Fallback to mock data if API returns empty
-            setGraphData(filterMockData(selectedGroup))
-          } else {
-            setGraphData(data)
+            setError('No data returned. Make sure the Python server is running.')
           }
         }
       } catch (err) {
         console.error('Failed to fetch data:', err)
         if (!cancelled) {
-          setError('Failed to load data')
-          setGraphData(filterMockData(selectedGroup))
+          setError('Failed to load data. Start the server with: python server.py')
+          setGraphData({ nodes: [], links: [] })
         }
       } finally {
         if (!cancelled) {
@@ -72,32 +74,7 @@ export default function NetworkGraph({
     return () => {
       cancelled = true
     }
-  }, [selectedGroup])
-
-  // Filter mock data client-side as fallback
-  function filterMockData(groupFilter: number | null): GraphData {
-    if (groupFilter === null) {
-      return mockData
-    }
-
-    const filteredNodeIds = new Set(
-      mockData.nodes.filter(n => n.group === groupFilter).map(n => n.id)
-    )
-
-    mockData.links.forEach(link => {
-      if (filteredNodeIds.has(link.source) || filteredNodeIds.has(link.target)) {
-        filteredNodeIds.add(link.source)
-        filteredNodeIds.add(link.target)
-      }
-    })
-
-    return {
-      nodes: mockData.nodes.filter(n => filteredNodeIds.has(n.id)),
-      links: mockData.links.filter(
-        l => filteredNodeIds.has(l.source) && filteredNodeIds.has(l.target)
-      ),
-    }
-  }
+  }, [filters])
 
   // Initialize/update graph
   useEffect(() => {
@@ -119,6 +96,44 @@ export default function NetworkGraph({
       })
 
     svg.call(zoom)
+    zoomRef.current = zoom
+
+    // Fit to screen function
+    const fitToScreen = () => {
+      if (nodes.length === 0) return
+
+      const padding = 50
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+
+      nodes.forEach(n => {
+        if (n.x !== undefined && n.y !== undefined) {
+          minX = Math.min(minX, n.x)
+          maxX = Math.max(maxX, n.x)
+          minY = Math.min(minY, n.y)
+          maxY = Math.max(maxY, n.y)
+        }
+      })
+
+      if (!isFinite(minX)) return
+
+      const boundsWidth = maxX - minX
+      const boundsHeight = maxY - minY
+      const centerX = (minX + maxX) / 2
+      const centerY = (minY + maxY) / 2
+
+      const scale = Math.min(
+        (width - padding * 2) / (boundsWidth || 1),
+        (height - padding * 2) / (boundsHeight || 1),
+        1.5 // max zoom
+      )
+
+      const transform = d3.zoomIdentity
+        .translate(width / 2, height / 2)
+        .scale(scale)
+        .translate(-centerX, -centerY)
+
+      svg.transition().duration(500).call(zoom.transform, transform)
+    }
 
     // Main group
     const g = svg.append('g')
@@ -135,7 +150,7 @@ export default function NetworkGraph({
       .join('line')
       .attr('stroke', '#cbd5e1')
       .attr('stroke-opacity', 0.6)
-      .attr('stroke-width', d => Math.sqrt(d.value) * 1.5)
+      .attr('stroke-width', d => Math.sqrt(d.weight) * 1.5)
 
     // Nodes
     const nodeGroup = g.append('g').attr('class', 'nodes')
@@ -144,7 +159,7 @@ export default function NetworkGraph({
       .data(nodes)
       .join('circle')
       .attr('r', NODE_SIZE)
-      .attr('fill', d => groupColors[d.group] || '#999')
+      .attr('fill', d => typeColors[d.type] || '#999')
       .attr('stroke', '#fff')
       .attr('stroke-width', 2)
       .style('cursor', 'grab')
@@ -193,6 +208,12 @@ export default function NetworkGraph({
         .attr('y', d => d.y!)
     })
 
+    // Fit to screen when simulation settles
+    simulation.on('end', fitToScreen)
+
+    // Also fit after a short delay for initial layout
+    setTimeout(fitToScreen, 300)
+
     // Drag behavior
     const drag = d3.drag<SVGCircleElement, SimNode>()
       .on('start', (event, d) => {
@@ -235,12 +256,12 @@ export default function NetworkGraph({
         .attr('stroke', l => {
           const sourceId = typeof l.source === 'object' ? (l.source as SimNode).id : String(l.source)
           const targetId = typeof l.target === 'object' ? (l.target as SimNode).id : String(l.target)
-          return sourceId === d.id || targetId === d.id ? (groupColors[d.group] || '#999') : '#cbd5e1'
+          return sourceId === d.id || targetId === d.id ? (typeColors[d.type] || '#999') : '#cbd5e1'
         })
         .attr('stroke-width', l => {
           const sourceId = typeof l.source === 'object' ? (l.source as SimNode).id : String(l.source)
           const targetId = typeof l.target === 'object' ? (l.target as SimNode).id : String(l.target)
-          return sourceId === d.id || targetId === d.id ? Math.sqrt(l.value) * 2.5 : Math.sqrt(l.value) * 1.5
+          return sourceId === d.id || targetId === d.id ? Math.sqrt(l.weight) * 2.5 : Math.sqrt(l.weight) * 1.5
         })
 
       labels.attr('opacity', n => n.id === d.id || connectedNodeIds.has(n.id) ? 1 : 0)
@@ -249,7 +270,7 @@ export default function NetworkGraph({
       if (tooltipRef.current) {
         tooltipRef.current.innerHTML = `
           <div style="font-weight: 700; color: #1e293b;">${d.label || d.id}</div>
-          <div style="color: #64748b; font-size: 0.75rem; margin-top: 0.25rem;">${groupLabels[d.group] || 'Unknown'}</div>
+          <div style="color: #64748b; font-size: 0.75rem; margin-top: 0.25rem;">${typeLabels[d.type] || 'Unknown'}</div>
           <div style="color: #64748b; font-size: 0.75rem;">${connectedNodeIds.size} connections</div>
         `
         tooltipRef.current.style.opacity = '1'
@@ -265,7 +286,7 @@ export default function NetworkGraph({
       link
         .attr('opacity', 0.6)
         .attr('stroke', '#cbd5e1')
-        .attr('stroke-width', d => Math.sqrt(d.value) * 1.5)
+        .attr('stroke-width', d => Math.sqrt(d.weight) * 1.5)
       labels.attr('opacity', 0)
 
       if (tooltipRef.current) {
@@ -361,14 +382,14 @@ export default function NetworkGraph({
           Legend
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {Object.entries(groupLabels).map(([key, label]) => (
+          {Object.entries(typeLabels).map(([key, label]) => (
             <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <div
                 style={{
                   width: '10px',
                   height: '10px',
                   borderRadius: '50%',
-                  backgroundColor: groupColors[Number(key)],
+                  backgroundColor: typeColors[key],
                   flexShrink: 0,
                 }}
               />

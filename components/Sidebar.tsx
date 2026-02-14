@@ -1,14 +1,14 @@
 'use client'
 
-import { groupLabels, groupColors } from '@/lib/data'
+import { typeLabels, typeColors, GraphFilters, defaultFilters, GraphMode } from '@/lib/data'
 
 interface SidebarProps {
   collapsed: boolean
   onToggle: () => void
   chargeStrength: number
   setChargeStrength: (v: number) => void
-  selectedGroup: number | null
-  setSelectedGroup: (v: number | null) => void
+  filters: GraphFilters
+  setFilters: (f: GraphFilters) => void
 }
 
 export default function Sidebar({
@@ -16,9 +16,14 @@ export default function Sidebar({
   onToggle,
   chargeStrength,
   setChargeStrength,
-  selectedGroup,
-  setSelectedGroup,
+  filters,
+  setFilters,
 }: SidebarProps) {
+
+  const updateFilter = <K extends keyof GraphFilters>(key: K, value: GraphFilters[K]) => {
+    setFilters({ ...filters, [key]: value })
+  }
+
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
       {/* Sidebar Header */}
@@ -37,7 +42,7 @@ export default function Sidebar({
               d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75"
             />
           </svg>
-          Controls
+          Filters
         </span>
         <button className="collapse-btn" onClick={onToggle} title="Toggle sidebar">
           <svg
@@ -73,63 +78,144 @@ export default function Sidebar({
 
       {/* Sidebar Content */}
       <div className="sidebar-content">
-        {/* Group Filter */}
+        {/* Graph Mode */}
         <div className="filter-section">
-          <div className="filter-label">Filter by Group</div>
+          <div className="filter-label">Graph Mode</div>
           <div className="filter-options">
-            <button
-              className={`filter-option ${selectedGroup === null ? 'active' : ''}`}
-              onClick={() => setSelectedGroup(null)}
-            >
-              All Groups
-            </button>
-            {Object.entries(groupLabels).map(([key, label]) => (
+            {(['full', 'mep', 'commission'] as GraphMode[]).map((mode) => (
               <button
-                key={key}
-                className={`filter-option ${selectedGroup === Number(key) ? 'active' : ''}`}
-                onClick={() => setSelectedGroup(Number(key))}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                }}
+                key={mode}
+                className={`filter-option ${filters.mode === mode ? 'active' : ''}`}
+                onClick={() => updateFilter('mode', mode)}
               >
-                <span
-                  className="legend-dot"
-                  style={{ backgroundColor: groupColors[Number(key)] }}
-                />
-                {label}
+                {mode === 'full' ? 'Full Network' : mode === 'mep' ? 'MEP — Orgs' : 'Commission — Orgs'}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Simulation Controls */}
+        {/* Degree Filters */}
         <div className="filter-section">
-          <div className="filter-label">Layout</div>
+          <div className="filter-label">Degree Thresholds</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {/* Node Spacing */}
+            {/* Org Min Degree */}
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                <span style={{ fontSize: '0.8125rem', color: '#475569' }}>Node Spacing</span>
+                <span style={{ fontSize: '0.8125rem', color: '#475569' }}>Min Org Connections</span>
                 <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#1e293b' }}>
-                  {chargeStrength === -500 ? 'Max' : chargeStrength === -10 ? 'Min' : Math.round(((-chargeStrength - 10) / 490) * 100) + '%'}
+                  {filters.orgMinDegree}
                 </span>
               </div>
               <input
                 type="range"
-                min={-500}
-                max={-10}
-                value={chargeStrength}
-                onChange={(e) => setChargeStrength(Number(e.target.value))}
+                min={1}
+                max={10}
+                value={filters.orgMinDegree}
+                onChange={(e) => updateFilter('orgMinDegree', Number(e.target.value))}
                 style={{ width: '100%' }}
               />
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.25rem' }}>
-                <span style={{ fontSize: '0.6875rem', color: '#94a3b8' }}>Spread out</span>
-                <span style={{ fontSize: '0.6875rem', color: '#94a3b8' }}>Cluster</span>
+            </div>
+
+            {/* Actor Min Degree */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span style={{ fontSize: '0.8125rem', color: '#475569' }}>Min Actor Connections</span>
+                <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#1e293b' }}>
+                  {filters.actorMinDegree}
+                </span>
               </div>
+              <input
+                type="range"
+                min={1}
+                max={10}
+                value={filters.actorMinDegree}
+                onChange={(e) => updateFilter('actorMinDegree', Number(e.target.value))}
+                style={{ width: '100%' }}
+              />
             </div>
           </div>
+        </div>
+
+        {/* K-Core Filter */}
+        <div className="filter-section">
+          <div className="filter-label">Bipartite K-Core</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+            <span style={{ fontSize: '0.8125rem', color: '#475569' }}>K value (0 = off)</span>
+            <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#1e293b' }}>
+              {filters.bipartiteKCore}
+            </span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={5}
+            value={filters.bipartiteKCore}
+            onChange={(e) => updateFilter('bipartiteKCore', Number(e.target.value))}
+            style={{ width: '100%' }}
+          />
+          <div style={{ fontSize: '0.6875rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+            Iteratively prune nodes with degree &lt; K
+          </div>
+        </div>
+
+        {/* Min Edge Weight */}
+        <div className="filter-section">
+          <div className="filter-label">Min Edge Weight</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+            <span style={{ fontSize: '0.8125rem', color: '#475569' }}>Min meetings</span>
+            <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#1e293b' }}>
+              {filters.minEdgeWeight}
+            </span>
+          </div>
+          <input
+            type="range"
+            min={1}
+            max={10}
+            value={filters.minEdgeWeight}
+            onChange={(e) => updateFilter('minEdgeWeight', Number(e.target.value))}
+            style={{ width: '100%' }}
+          />
+          <div style={{ fontSize: '0.6875rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+            Hide edges with fewer meetings
+          </div>
+        </div>
+
+        {/* Layout Control */}
+        <div className="filter-section">
+          <div className="filter-label">Layout</div>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+              <span style={{ fontSize: '0.8125rem', color: '#475569' }}>Node Spacing</span>
+              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#1e293b' }}>
+                {chargeStrength === -500 ? 'Max' : chargeStrength === -10 ? 'Min' : Math.round(((-chargeStrength - 10) / 490) * 100) + '%'}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={-500}
+              max={-10}
+              value={chargeStrength}
+              onChange={(e) => setChargeStrength(Number(e.target.value))}
+              style={{ width: '100%' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.25rem' }}>
+              <span style={{ fontSize: '0.6875rem', color: '#94a3b8' }}>Spread out</span>
+              <span style={{ fontSize: '0.6875rem', color: '#94a3b8' }}>Cluster</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Keep Isolates Toggle */}
+        <div className="filter-section">
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={filters.keepIsolates}
+              onChange={(e) => updateFilter('keepIsolates', e.target.checked)}
+              style={{ width: '1rem', height: '1rem' }}
+            />
+            <span style={{ fontSize: '0.8125rem', color: '#475569' }}>Show isolated nodes</span>
+          </label>
         </div>
 
         {/* Reset Button */}
@@ -137,7 +223,7 @@ export default function Sidebar({
           <button
             onClick={() => {
               setChargeStrength(-150)
-              setSelectedGroup(null)
+              setFilters(defaultFilters)
             }}
             style={{
               width: '100%',

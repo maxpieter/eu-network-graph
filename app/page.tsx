@@ -3,10 +3,11 @@
 import { useState, useEffect } from 'react'
 import NetworkGraph from '@/components/NetworkGraph'
 import Sidebar from '@/components/Sidebar'
+import { GraphFilters, defaultFilters } from '@/lib/data'
 
 export default function Home() {
   const [chargeStrength, setChargeStrength] = useState(-150)
-  const [selectedGroup, setSelectedGroup] = useState<number | null>(null)
+  const [filters, setFilters] = useState<GraphFilters>(defaultFilters)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   // Trigger resize event when sidebar collapses/expands
@@ -77,8 +78,8 @@ export default function Home() {
           onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
           chargeStrength={chargeStrength}
           setChargeStrength={setChargeStrength}
-          selectedGroup={selectedGroup}
-          setSelectedGroup={setSelectedGroup}
+          filters={filters}
+          setFilters={setFilters}
         />
 
         {/* Main Content */}
@@ -86,7 +87,7 @@ export default function Home() {
           <div className="chart-container" style={{ height: 'calc(100vh - 64px - 3rem)' }}>
             <NetworkGraph
               chargeStrength={chargeStrength}
-              selectedGroup={selectedGroup}
+              filters={filters}
             />
           </div>
         </main>
